@@ -36,6 +36,12 @@ wipe out that city.
 KNOWN BUGS/GLITCHES
 ===================
 1. Cities not being directly in the country you have chosen
-2. AI can fire apon itself for some reason
-3. The "Play again!" button is borked and is getting fixed.
-4. "Game Volume" label isnt in line with the screen boundary.
+2. AI can fire apon itself for some reason - working on it
+3. "Game Volume" label isnt in line with the screen boundary. - working on it
+
+*UPDATES*
+
+Version 2: Updated title screen, fixed the Play again button and added a timer
+Version 3: Added Air Defence for both AI and Player
+Version 3.1: Updated the selection box sizes and spacing
+Version 3.2: Added username function to the game
