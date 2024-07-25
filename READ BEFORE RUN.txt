@@ -1,0 +1,41 @@
+Defcon 2.1 - by Nexustini
+
+Hello and thank you for downloading this project!
+
+===========
+HOW TO RUN
+===========
+1. Please have Python and pygame installed on to your PC.
+2. Open main.py by double clicking the file and it should start.
+
+=========
+IMPORTANT
+=========
+Please do not edit the directory or move the files within
+the folder as this will cause the game to break.
+
+===========
+HOW TO PLAY
+===========
+simply click on a starting country, you will be greeted
+with a map and red and green dots, these dots represent
+cities. The green is you and the red is the AI.
+
+To fire missiles you need to select a city and then select
+the target city to launch. There is a button you can click
+at the bottom to switch from "Regular" to "ICBM", the ICBM
+missiles can destroy a city in one hit but might not always
+land. The Regular missiles takes 1 health away from the city
+but has a better chance of landing. Each city has a total of 
+3 ICBM missiles to use.
+
+Each city has a health of 3, so 3 hits with a regular will
+wipe out that city.
+
+===================
+KNOWN BUGS/GLITCHES
+===================
+1. Cities not being directly in the country you have chosen
+2. AI can fire apon itself for some reason
+3. The "Play again!" button is borked and is getting fixed.
+4. "Game Volume" label isnt in line with the screen boundary.
