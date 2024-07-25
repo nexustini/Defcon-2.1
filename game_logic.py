@@ -1,6 +1,6 @@
 import random
 import pygame
-from entities import City, Missile
+from entities import City, Missile, AirDefense
 
 # Define the countries and their coordinate ranges
 countries = {
@@ -40,15 +40,20 @@ def draw_end_game_screen(screen, font, background, game_state):
     minutes, seconds = divmod(game_state['total_time'], 60)
     time_text = font.render(f"Total Time: {minutes:02d}:{seconds:02d}", True, (255, 255, 255))
 
-    screen.blit(game_over_text, (screen.get_width() // 2 - game_over_text.get_width() // 2, 200))
-    screen.blit(score_text, (screen.get_width() // 2 - score_text.get_width() // 2, 250))
-    screen.blit(winner_text, (screen.get_width() // 2 - winner_text.get_width() // 2, 300))
-    screen.blit(time_text, (screen.get_width() // 2 - time_text.get_width() // 2, 350))
+    player_score_text = font.render(f"{game_state['selected_country']} Score: {game_state['player_score']}", True, (255, 255, 255))
+    ai_score_text = font.render(f"{game_state['ai_country']} Score: {game_state['ai_score']}", True, (255, 255, 255))
+
+    screen.blit(game_over_text, (screen.get_width() // 2 - game_over_text.get_width() // 2, 150))
+    screen.blit(score_text, (screen.get_width() // 2 - score_text.get_width() // 2, 200))
+    screen.blit(winner_text, (screen.get_width() // 2 - winner_text.get_width() // 2, 250))
+    screen.blit(time_text, (screen.get_width() // 2 - time_text.get_width() // 2, 300))
+    screen.blit(player_score_text, (screen.get_width() // 2 - player_score_text.get_width() // 2, 350))
+    screen.blit(ai_score_text, (screen.get_width() // 2 - ai_score_text.get_width() // 2, 400))
 
     # Create "Play Again" button with the same style as country buttons
     button_width = 200
     button_height = 50
-    button_rect = pygame.Rect((screen.get_width() - button_width) // 2, 400, button_width, button_height)
+    button_rect = pygame.Rect((screen.get_width() - button_width) // 2, 450, button_width, button_height)
     pygame.draw.rect(screen, (100, 100, 255), button_rect)  # Light blue color
 
     button_text = font.render("Play Again", True, (255, 255, 255))
@@ -57,7 +62,6 @@ def draw_end_game_screen(screen, font, background, game_state):
 
     pygame.display.flip()
     return button_rect
-
 
 def handle_country_selection(game_state, background):
     screen = pygame.display.get_surface()
@@ -144,18 +148,43 @@ def ai_turn(game_state):
             start_city = random.choice(ai_cities)
             launch_missile(start_city, target_city, False, game_state)
 
+    # Place AI air defense
+    if game_state['ai_air_defense'] is None and random.random() < 0.2:  # 20% chance to place air defense
+        ai_country_coords = countries[game_state['ai_country']]
+        x = random.randint(ai_country_coords[0][0], ai_country_coords[1][0])
+        y = random.randint(ai_country_coords[0][1], ai_country_coords[1][1])
+        game_state['ai_air_defense'] = AirDefense(x, y)
+
 def check_game_over(game_state):
-    for country, city_list in game_state['cities'].items():
-        if len(city_list) == 0:
-            game_state['game_over'] = True
-            game_state['winner_country'] = game_state['ai_country'] if country == game_state['selected_country'] else game_state['selected_country']
-            game_state['player_won'] = game_state['winner_country'] != game_state['ai_country']
-            break
+    player_cities = game_state['cities'][game_state['selected_country']]
+    ai_cities = game_state['cities'][game_state['ai_country']]
+
+    if len(player_cities) == 0 or len(ai_cities) == 0:
+        game_state['game_over'] = True
+        
+        if len(player_cities) == 0 and len(ai_cities) == 0:
+            if game_state['player_score'] > game_state['ai_score']:
+                game_state['winner_country'] = game_state['selected_country']
+                game_state['player_won'] = True
+            elif game_state['ai_score'] > game_state['player_score']:
+                game_state['winner_country'] = game_state['ai_country']
+                game_state['player_won'] = False
+            else:
+                game_state['winner_country'] = "Tie"
+                game_state['player_won'] = False
+        elif len(player_cities) == 0:
+            game_state['winner_country'] = game_state['ai_country']
+            game_state['player_won'] = False
+        else:
+            game_state['winner_country'] = game_state['selected_country']
+            game_state['player_won'] = True
 
 def handle_missile_collisions(game_state):
-    for missile in game_state['missiles']:
-        for other_missile in game_state['missiles']:
+    for missile in game_state['missiles'][:]:
+        for other_missile in game_state['missiles'][:]:
             if missile != other_missile and missile.rect.colliderect(other_missile.rect):
-                game_state['missiles'].remove(missile)
-                game_state['missiles'].remove(other_missile)
+                if missile in game_state['missiles']:
+                    game_state['missiles'].remove(missile)
+                if other_missile in game_state['missiles']:
+                    game_state['missiles'].remove(other_missile)
                 break

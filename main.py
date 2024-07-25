@@ -1,6 +1,6 @@
 import pygame
 import random
-from entities import City, Missile
+from entities import City, Missile, AirDefense
 import game_logic
 import time
 
@@ -17,6 +17,8 @@ BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 YELLOW = (255, 255, 0)
+BLUE = (0, 0, 255)
+ORANGE = (255, 165, 0)
 BUTTON_COLOR = (100, 100, 255)
 BUTTON_HOVER_COLOR = (150, 150, 255)
 BUTTON_TEXT_COLOR = GREEN
@@ -65,6 +67,8 @@ game_state = {
     'cities': {},
     'missiles': [],
     'score': 0,
+    'player_score': 0,
+    'ai_score': 0,
     'selected_country': None,
     'ai_country': None,
     'selected_city': None,
@@ -77,7 +81,9 @@ game_state = {
     'health_display_time': 0,
     'selected_missile_type': "regular",
     'start_time': 0,
-    'total_time': 0
+    'total_time': 0,
+    'player_air_defense': None,
+    'ai_air_defense': None
 }
 
 # Font for UI
@@ -123,8 +129,31 @@ def draw_ui():
     stopwatch_text = font.render(f"{minutes:02d}:{seconds:02d}", True, WHITE)
     screen.blit(stopwatch_text, (WIDTH // 2 - stopwatch_text.get_width() // 2, 10))
 
+    # Draw scoreboard
+    player_score_text = font.render(f"{game_state['selected_country']}: {game_state['player_score']}", True, WHITE)
+    ai_score_text = font.render(f"{game_state['ai_country']}: {game_state['ai_score']}", True, WHITE)
+    screen.blit(player_score_text, (10, HEIGHT - 80))
+    screen.blit(ai_score_text, (10, HEIGHT - 40))
+
+    # Draw air defense count
+    air_defense_text = font.render(f"Air Defense: {'Available' if game_state['player_air_defense'] is None else 'Placed'}", True, WHITE)
+    screen.blit(air_defense_text, (10, HEIGHT - 120))
+
+    # Draw air defense placement button
+    air_defense_button = pygame.Rect(WIDTH - 200, HEIGHT - 120, 190, 50)
+    pygame.draw.rect(screen, BUTTON_COLOR, air_defense_button)
+    air_defense_text = font.render("Place Air Defense", True, BUTTON_TEXT_COLOR)
+    screen.blit(air_defense_text, (WIDTH - 190, HEIGHT - 115))
+
+def place_air_defense(game_state, x, y, is_player=True):
+    if is_player and game_state['player_air_defense'] is None:
+        game_state['player_air_defense'] = AirDefense(x, y)
+    elif not is_player and game_state['ai_air_defense'] is None:
+        game_state['ai_air_defense'] = AirDefense(x, y)
+
 def game_loop():
     global volume
+    placing_air_defense = False
     running = True
     while running:
         for event in pygame.event.get():
@@ -136,7 +165,14 @@ def game_loop():
                     return True  # Restart the game
             elif game_state['user_turn'] and event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
-                if slider_rect.collidepoint(x, y):
+                air_defense_button = pygame.Rect(WIDTH - 200, HEIGHT - 120, 190, 50)
+                
+                if air_defense_button.collidepoint(x, y):
+                    placing_air_defense = True
+                elif placing_air_defense:
+                    place_air_defense(game_state, x, y, is_player=True)
+                    placing_air_defense = False
+                elif slider_rect.collidepoint(x, y):
                     volume = (x - slider_rect.x) / slider_rect.width
                     pygame.mixer.music.set_volume(volume)
                 elif WIDTH - 200 <= x <= WIDTH - 10 and HEIGHT - 60 <= y <= HEIGHT - 10:
@@ -160,18 +196,21 @@ def game_loop():
             game_logic.ai_turn(game_state)
             game_state['user_turn'] = True
 
-        for missile in game_state['missiles']:
+        for missile in game_state['missiles'][:]:  # Create a copy of the list to iterate over
             if missile.update():
-                game_state['score'] += 1
-                for country, city_list in game_state['cities'].items():
-                    for city in city_list:
-                        if (city.x, city.y) == missile.target_pos:
-                            if city.hit(missile.is_icbm):
-                                city_list.remove(city)
-                            game_logic.check_game_over(game_state)
-                            if game_state['game_over']:
-                                game_state['total_time'] = int(time.time() - game_state['start_time'])
-                            break
+                # Missile has reached its target
+                handle_missile_hit(game_state, missile)
+            else:
+                # Check for air defense interception
+                if game_state['player_air_defense'] and is_ai_missile(game_state, missile):
+                    if handle_air_defense(game_state['player_air_defense'], missile):
+                        game_state['missiles'].remove(missile)
+                        continue
+                
+                if game_state['ai_air_defense'] and is_player_missile(game_state, missile):
+                    if handle_air_defense(game_state['ai_air_defense'], missile):
+                        game_state['missiles'].remove(missile)
+                        continue
 
         game_logic.handle_missile_collisions(game_state)
 
@@ -185,6 +224,12 @@ def game_loop():
                     pygame.draw.circle(screen, color, (city.x, city.y), 4)
             for missile in game_state['missiles']:
                 missile.draw(screen)
+            if game_state['player_air_defense']:
+                pygame.draw.circle(screen, BLUE, (game_state['player_air_defense'].x, game_state['player_air_defense'].y), 6)
+                pygame.draw.circle(screen, BLUE, (game_state['player_air_defense'].x, game_state['player_air_defense'].y), game_state['player_air_defense'].range, 1)
+            if game_state['ai_air_defense']:
+                pygame.draw.circle(screen, ORANGE, (game_state['ai_air_defense'].x, game_state['ai_air_defense'].y), 6)
+                pygame.draw.circle(screen, ORANGE, (game_state['ai_air_defense'].x, game_state['ai_air_defense'].y), game_state['ai_air_defense'].range, 1)
             draw_ui()
 
         if game_state['health_display'] and pygame.time.get_ticks() - game_state['health_display_time'] < 2000:
@@ -258,6 +303,8 @@ def main():
             'cities': {},
             'missiles': [],
             'score': 0,
+            'player_score': 0,
+            'ai_score': 0,
             'selected_country': None,
             'ai_country': None,
             'selected_city': None,
@@ -270,10 +317,49 @@ def main():
             'health_display_time': 0,
             'selected_missile_type': "regular",
             'start_time': 0,
-            'total_time': 0
+            'total_time': 0,
+            'player_air_defense': None,
+            'ai_air_defense': None
         })
 
     pygame.quit()
+
+def is_player_missile(game_state, missile):
+    return any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
+               for city in game_state['cities'][game_state['selected_country']])
+
+def is_ai_missile(game_state, missile):
+    return any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
+               for city in game_state['cities'][game_state['ai_country']])
+
+def handle_air_defense(air_defense, missile):
+    air_defense.update()
+    if air_defense.can_shoot() and air_defense.in_range(missile):
+        if random.random() < 0.7:  # 70% chance to shoot down
+            air_defense.shoot()
+            return True
+    return False
+
+def handle_missile_hit(game_state, missile):
+    is_player_missile = any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
+                            for city in game_state['cities'][game_state['selected_country']])
+    
+    if is_player_missile:
+        game_state['player_score'] += 1
+    else:
+        game_state['ai_score'] += 1
+    
+    game_state['score'] += 1
+    for country, city_list in game_state['cities'].items():
+        for city in city_list[:]:  # Create a copy of the list to iterate over
+            if (city.x, city.y) == missile.target_pos:
+                if city.hit(missile.is_icbm):
+                    city_list.remove(city)
+                game_logic.check_game_over(game_state)
+                if game_state['game_over']:
+                    game_state['total_time'] = int(time.time() - game_state['start_time'])
+                break
+    game_state['missiles'].remove(missile)  # Remove the missile after it has hit
 
 if __name__ == "__main__":
     main()
