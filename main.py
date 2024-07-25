@@ -2,6 +2,7 @@ import pygame
 import random
 from entities import City, Missile
 import game_logic
+import time
 
 # Initialize Pygame
 pygame.init()
@@ -74,11 +75,14 @@ game_state = {
     'player_won': False,
     'health_display': None,
     'health_display_time': 0,
-    'selected_missile_type': "regular"
+    'selected_missile_type': "regular",
+    'start_time': 0,
+    'total_time': 0
 }
 
 # Font for UI
 font = pygame.font.SysFont(None, 36)
+title_font = pygame.font.SysFont(None, 100)
 
 def draw_ui():
     global slider_rect, volume
@@ -113,13 +117,23 @@ def draw_ui():
     if game_state['health_display']:
         screen.blit(game_state['health_display'], game_state['health_display'].get_rect(center=(WIDTH//2, HEIGHT - 60)))
 
+    # Draw stopwatch
+    elapsed_time = int(time.time() - game_state['start_time'])
+    minutes, seconds = divmod(elapsed_time, 60)
+    stopwatch_text = font.render(f"{minutes:02d}:{seconds:02d}", True, WHITE)
+    screen.blit(stopwatch_text, (WIDTH // 2 - stopwatch_text.get_width() // 2, 10))
+
 def game_loop():
     global volume
     running = True
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
+                return False  # Exit the game
+            elif game_state['game_over'] and event.type == pygame.MOUSEBUTTONDOWN:
+                button_rect = game_logic.draw_end_game_screen(screen, font, background, game_state)
+                if button_rect.collidepoint(event.pos):
+                    return True  # Restart the game
             elif game_state['user_turn'] and event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
                 if slider_rect.collidepoint(x, y):
@@ -141,10 +155,6 @@ def game_loop():
                         game_state['selected_city'] = None
                         game_state['target_city'] = None
                         game_state['user_turn'] = False
-            elif game_state['game_over'] and event.type == pygame.MOUSEBUTTONDOWN:
-                button_rect = game_logic.draw_end_game_screen(screen, font, background, game_state)
-                if button_rect.collidepoint(event.pos):
-                    return True  # Indicate to return to the country selection menu
 
         if not game_state['user_turn'] and not game_state['game_over']:
             game_logic.ai_turn(game_state)
@@ -159,6 +169,8 @@ def game_loop():
                             if city.hit(missile.is_icbm):
                                 city_list.remove(city)
                             game_logic.check_game_over(game_state)
+                            if game_state['game_over']:
+                                game_state['total_time'] = int(time.time() - game_state['start_time'])
                             break
 
         game_logic.handle_missile_collisions(game_state)
@@ -183,7 +195,7 @@ def game_loop():
         pygame.display.flip()
         clock.tick(FPS)
 
-    return False  # Indicate to exit the game
+    return False  # Exit the game
 
 def generate_cities(country, num_cities=5):
     cities = []
@@ -194,8 +206,40 @@ def generate_cities(country, num_cities=5):
         cities.append(City(x, y))
     return cities
 
+def show_intro():
+    title_text = title_font.render("DEFCON 2.1", True, RED)
+    text_rect = title_text.get_rect(center=(WIDTH // 2, -50))
+    
+    overlay = pygame.Surface((WIDTH, HEIGHT))
+    overlay.fill(BLACK)
+    overlay.set_alpha(200)
+    
+    start_time = pygame.time.get_ticks()
+    duration = 3000  # 3 seconds for the animation
+    
+    while pygame.time.get_ticks() - start_time < duration:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+        
+        progress = (pygame.time.get_ticks() - start_time) / duration
+        y_pos = -50 + progress * (HEIGHT // 2 + 50)
+        text_rect.centery = int(y_pos)
+        
+        screen.blit(background, (0, 0))
+        screen.blit(overlay, (0, 0))
+        screen.blit(title_text, text_rect)
+        
+        pygame.display.flip()
+        clock.tick(60)
+    
+    # Hold the title in the center for a moment
+    pygame.time.wait(1000)
+
 def main():
     while True:
+        show_intro()
         game_logic.handle_country_selection(game_state, background)
         
         # Generate 5 cities for the player and AI in their respective continents
@@ -203,6 +247,8 @@ def main():
             game_state['selected_country']: generate_cities(game_state['selected_country']),
             game_state['ai_country']: generate_cities(game_state['ai_country'])
         }
+        
+        game_state['start_time'] = time.time()
         
         if not game_loop():
             break
@@ -222,7 +268,9 @@ def main():
             'player_won': False,
             'health_display': None,
             'health_display_time': 0,
-            'selected_missile_type': "regular"
+            'selected_missile_type': "regular",
+            'start_time': 0,
+            'total_time': 0
         })
 
     pygame.quit()

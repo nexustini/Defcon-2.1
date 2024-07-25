@@ -1,5 +1,5 @@
 import random
-import pygame  # Add this import
+import pygame
 from entities import City, Missile
 
 # Define the countries and their coordinate ranges
@@ -25,18 +25,39 @@ def generate_cities():
 
 def draw_end_game_screen(screen, font, background, game_state):
     screen.blit(background, (0, 0))
+
+    # Create a semi-transparent overlay
+    overlay = pygame.Surface((screen.get_width(), screen.get_height()))
+    overlay.set_alpha(128)
+    overlay.fill((0, 0, 0))
+    screen.blit(overlay, (0, 0))
+
     game_over_text = font.render("Game Over", True, (255, 0, 0))
     score_text = font.render(f"Final Score: {game_state['score']}", True, (255, 255, 255))
     winner_text = font.render(f"Winner: {game_state['winner_country']}", True, (255, 255, 0))
-    button_rect = pygame.Rect(350, 400, 100, 50)
-    pygame.draw.rect(screen, (0, 255, 0), button_rect)
-    button_text = font.render("Play Again", True, (0, 0, 0))
-    screen.blit(game_over_text, (350, 200))
-    screen.blit(score_text, (350, 250))
-    screen.blit(winner_text, (350, 300))
-    screen.blit(button_text, (355, 410))
+
+    # Add total time text
+    minutes, seconds = divmod(game_state['total_time'], 60)
+    time_text = font.render(f"Total Time: {minutes:02d}:{seconds:02d}", True, (255, 255, 255))
+
+    screen.blit(game_over_text, (screen.get_width() // 2 - game_over_text.get_width() // 2, 200))
+    screen.blit(score_text, (screen.get_width() // 2 - score_text.get_width() // 2, 250))
+    screen.blit(winner_text, (screen.get_width() // 2 - winner_text.get_width() // 2, 300))
+    screen.blit(time_text, (screen.get_width() // 2 - time_text.get_width() // 2, 350))
+
+    # Create "Play Again" button with the same style as country buttons
+    button_width = 200
+    button_height = 50
+    button_rect = pygame.Rect((screen.get_width() - button_width) // 2, 400, button_width, button_height)
+    pygame.draw.rect(screen, (100, 100, 255), button_rect)  # Light blue color
+
+    button_text = font.render("Play Again", True, (255, 255, 255))
+    text_rect = button_text.get_rect(center=button_rect.center)
+    screen.blit(button_text, text_rect)
+
     pygame.display.flip()
     return button_rect
+
 
 def handle_country_selection(game_state, background):
     screen = pygame.display.get_surface()
