@@ -28,12 +28,15 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("DEFCON 2.1 - Nexustini")
 
 # Load explosion sound
-
 try:
     explosion_sound = pygame.mixer.Sound('explosion_sound.wav')
 except pygame.error as e:
     print(f"Unable to load explosion sound: {e}")
     explosion_sound = None
+
+# Global variable for SFX volume
+global sfx_volume
+sfx_volume = 0.5  # Initial sound effect volume (50%)
 
 # Load background image
 try:
@@ -93,16 +96,16 @@ game_state = {
     'total_time': 0,
     'player_air_defense': None,
     'ai_air_defense': None,
-    'explosion_effects': {}  # New dictionary to track explosion effects
+    'explosion_effects': {},
+    'sfx_volume': 0.5  # Add this line
 }
-
 # Font for UI
 font = pygame.font.SysFont(None, 36)
 title_font = pygame.font.SysFont(None, 100)
 small_font = pygame.font.SysFont(None, 24)  # New smaller font for the air defense button
 
-def draw_ui():
-    global slider_rect, volume
+def draw_ui(game_state):
+    global volume
     score_text = font.render(f"Score: {game_state['score']}", True, WHITE)
     screen.blit(score_text, (10, 10))
     if game_state['selected_country']:
@@ -121,20 +124,18 @@ def draw_ui():
         screen.blit(target_text, (10, 210))
         
     # Draw missile selection box
-    missile_button = pygame.Rect(WIDTH - 200, HEIGHT - 80, 190, 40)  # Moved down
+    missile_button = pygame.Rect(WIDTH - 200, HEIGHT - 80, 190, 40)
     pygame.draw.rect(screen, BUTTON_COLOR, missile_button)
     missile_type_text = font.render(f"{game_state['selected_missile_type'].upper()}", True, BUTTON_TEXT_COLOR)
     missile_text_rect = missile_type_text.get_rect(center=missile_button.center)
     screen.blit(missile_type_text, missile_text_rect)
     
-    # Draw and label volume slider
+    # Draw and label volume slider for music
     pygame.draw.rect(screen, BUTTON_COLOR, slider_rect)
     pygame.draw.rect(screen, WHITE, (slider_rect.x + int(slider_rect.width * volume), slider_rect.y, 10, slider_rect.height))
-    volume_label = font.render("Game Volume", True, BUTTON_TEXT_COLOR)
-    screen.blit(volume_label, (slider_rect.x, slider_rect.y - 30))
-
-    if game_state['health_display']:
-        screen.blit(game_state['health_display'], game_state['health_display'].get_rect(center=(WIDTH//2, HEIGHT - 60)))
+    volume_label = font.render("Music Volume", True, BUTTON_TEXT_COLOR)
+    volume_label_rect = volume_label.get_rect(midtop=(slider_rect.x + slider_rect.width // 2, slider_rect.y - 30))
+    screen.blit(volume_label, volume_label_rect)
 
     # Draw stopwatch
     elapsed_time = int(time.time() - game_state['start_time'])
@@ -153,12 +154,14 @@ def draw_ui():
     screen.blit(air_defense_text, (10, HEIGHT - 120))
 
     # Draw air defense placement button
-    air_defense_button = pygame.Rect(WIDTH - 200, HEIGHT - 140, 190, 40)  # Moved up
+    air_defense_button = pygame.Rect(WIDTH - 200, HEIGHT - 140, 190, 40)
     pygame.draw.rect(screen, BUTTON_COLOR, air_defense_button)
     air_defense_text = small_font.render("Place Air Defense", True, BUTTON_TEXT_COLOR)
     text_rect = air_defense_text.get_rect(center=air_defense_button.center)
     screen.blit(air_defense_text, text_rect)
 
+    if game_state['health_display']:
+        screen.blit(game_state['health_display'], game_state['health_display'].get_rect(center=(WIDTH//2, HEIGHT - 60)))
 def place_air_defense(game_state, x, y, is_player=True):
     if is_player and game_state['player_air_defense'] is None:
         game_state['player_air_defense'] = AirDefense(x, y)
@@ -246,11 +249,15 @@ def game_loop():
                 if game_state['player_air_defense'] and is_ai_missile(game_state, missile):
                     if handle_air_defense(game_state['player_air_defense'], missile):
                         game_state['missiles'].remove(missile)
+                        if game_state['player_air_defense']:  # Check if it still exists
+                            game_state['player_air_defense'].target = None  # Clear target after successful interception
                         continue
                 
                 if game_state['ai_air_defense'] and is_player_missile(game_state, missile):
                     if handle_air_defense(game_state['ai_air_defense'], missile):
                         game_state['missiles'].remove(missile)
+                        if game_state['ai_air_defense']:  # Check if it still exists
+                            game_state['ai_air_defense'].target = None  # Clear target after successful interception
                         continue
 
         game_logic.handle_missile_collisions(game_state)
@@ -265,12 +272,22 @@ def game_loop():
                     pygame.draw.circle(screen, color, (city.x, city.y), 4)
             for missile in game_state['missiles']:
                 missile.draw(screen)
+            
+            # Draw player air defense
             if game_state['player_air_defense']:
-                pygame.draw.circle(screen, BLUE, (game_state['player_air_defense'].x, game_state['player_air_defense'].y), 6)
-                pygame.draw.circle(screen, BLUE, (game_state['player_air_defense'].x, game_state['player_air_defense'].y), game_state['player_air_defense'].range, 1)
+                ad = game_state['player_air_defense']
+                pygame.draw.circle(screen, BLUE, (ad.x, ad.y), 6)
+                pygame.draw.circle(screen, BLUE, (ad.x, ad.y), ad.range, 1)
+                if ad.target:
+                    pygame.draw.line(screen, BLUE, (ad.x, ad.y), ad.target.position, 2)
+            
+            # Draw AI air defense
             if game_state['ai_air_defense']:
-                pygame.draw.circle(screen, ORANGE, (game_state['ai_air_defense'].x, game_state['ai_air_defense'].y), 6)
-                pygame.draw.circle(screen, ORANGE, (game_state['ai_air_defense'].x, game_state['ai_air_defense'].y), game_state['ai_air_defense'].range, 1)
+                ad = game_state['ai_air_defense']
+                pygame.draw.circle(screen, ORANGE, (ad.x, ad.y), 6)
+                pygame.draw.circle(screen, ORANGE, (ad.x, ad.y), ad.range, 1)
+                if ad.target:
+                    pygame.draw.line(screen, ORANGE, (ad.x, ad.y), ad.target.position, 2)
 
             # Draw and update the explosion effects
             for position, effect in list(game_state['explosion_effects'].items()):
@@ -292,7 +309,7 @@ def game_loop():
                 # Draw the explosion
                 pygame.draw.circle(screen, WHITE, (x, y), int(effect['radius']), 1)
             
-            draw_ui()
+            draw_ui(game_state)
 
         if game_state['health_display'] and pygame.time.get_ticks() - game_state['health_display_time'] < 2000:
             screen.blit(game_state['health_display'], game_state['health_display'].get_rect(center=(WIDTH//2, HEIGHT - 60)))
@@ -309,7 +326,7 @@ def show_intro():
     
     credit_font = pygame.font.SysFont(None, 36)
     credit_text = credit_font.render("Made by Nexustini", True, WHITE)
-    credit_rect = credit_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 30))  # Positioned below title
+    credit_rect = credit_text.get_rect(center=(WIDTH // 2, title_rect.bottom + 50))  # Position below the title
     
     overlay = pygame.Surface((WIDTH, HEIGHT))
     overlay.fill(BLACK)
@@ -334,7 +351,7 @@ def show_intro():
         if current_time < title_duration:
             # Animate title
             progress = min(current_time / title_duration, 1)
-            y_pos = -50 + progress * (HEIGHT // 2 + 20)  # Adjusted for new position
+            y_pos = -50 + progress * (HEIGHT // 2 - 30)  # Adjusted for new position
             title_rect.centery = int(y_pos)
         else:
             # Keep title in final position
@@ -345,9 +362,9 @@ def show_intro():
         if current_time > title_duration:
             # Animate credit
             credit_progress = min((current_time - title_duration) / credit_duration, 1)
-            credit_x = WIDTH + 200 - credit_progress * (WIDTH + 200)  # Start off-screen and move left
+            credit_y = HEIGHT + 100 - credit_progress * (HEIGHT + 100 - title_rect.bottom - 50)  # Stop below the title
             temp_credit_rect = credit_rect.copy()
-            temp_credit_rect.centerx = int(credit_x)
+            temp_credit_rect.centery = int(credit_y)
             screen.blit(credit_text, temp_credit_rect)
         
         pygame.display.flip()
@@ -398,6 +415,7 @@ def main():
         })
 
     pygame.quit()
+
 def is_player_missile(game_state, missile):
     return any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
                for city in game_state['cities'][game_state['selected_country']])
@@ -409,6 +427,7 @@ def is_ai_missile(game_state, missile):
 def handle_air_defense(air_defense, missile):
     air_defense.update()
     if air_defense.can_shoot() and air_defense.in_range(missile):
+        air_defense.target_missile(missile)  # Set the current target
         if random.random() < 0.7:  # 70% chance to shoot down
             air_defense.shoot()
             if is_player_missile(game_state, missile):
@@ -416,15 +435,20 @@ def handle_air_defense(air_defense, missile):
                 if air_defense.take_damage():
                     # AI air defense is destroyed
                     game_state['ai_air_defense'] = None
+                    return True
             else:
                 # Player air defense takes damage from AI missiles
                 if air_defense.take_damage(is_icbm=missile.is_icbm):
                     # Player air defense is destroyed
                     game_state['player_air_defense'] = None
+                    return True
             return True
+    else:
+        air_defense.target = None  # Clear the target if not in range or can't shoot
     return False
 
 def handle_missile_hit(game_state, missile):
+    global sfx_volume
     is_player_missile = any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
                             for city in game_state['cities'][game_state['selected_country']])
     
@@ -450,12 +474,14 @@ def handle_missile_hit(game_state, missile):
                     
                     # Play the explosion sound
                     if explosion_sound:
+                        explosion_sound.set_volume(0.2)# Sets explosion sound to 40%
                         explosion_sound.play()
                         
                 game_logic.check_game_over(game_state)
                 if game_state['game_over']:
                     game_state['total_time'] = int(time.time() - game_state['start_time'])
                 break
+    
     game_state['missiles'].remove(missile)  # Remove the missile after it has hit
 
 if __name__ == "__main__":

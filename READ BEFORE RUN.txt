@@ -45,3 +45,4 @@ Version 3: Added Air Defence for both AI and Player
 Version 3.1: Updated the selection box sizes and spacing
 Version 3.2: Added username function to the game
 Version 3.3: Added explosion blast circle and sound effect. Fixed AI firing apon themselves! Air defence CAN BE SHOT DOWN IN 2 HITS if a missile passes through the center of it. The air defence will regen and you will be able to place down another.
+Version 3.4: Updated intro screen. Changed the loudness of the explosion sound. Air Defence now shows the missile its targeting and it will get depleated after 2 hits on a missile. Will still regen after getting depleated.

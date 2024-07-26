@@ -55,7 +55,8 @@ class AirDefense:
         self.range = 50  # Reduced radius in pixels
         self.cooldown = 0
         self.max_cooldown = 60  # Frames between shots
-        self.health = 2  # New health attribute
+        self.health = 2  # Health attribute
+        self.target = None  # Store the currently targeted missile
 
     def update(self):
         if self.cooldown > 0:
@@ -76,3 +77,6 @@ class AirDefense:
         if self.health <= 0:
             return True
         return False
+
+    def target_missile(self, missile):
+        self.target = missile
