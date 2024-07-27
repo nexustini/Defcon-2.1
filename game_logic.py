@@ -1,6 +1,6 @@
 import random
 import pygame
-from entities import City, Missile, AirDefense
+from entities import City, Missile, AirDefense, Battleship, Bullet
 
 # Define the continent boundaries
 continent_boundaries = {
@@ -12,15 +12,15 @@ continent_boundaries = {
     "Oceania": [(900, 350), (1200, 550)]
 }
 
-def generate_cities():
-    cities = {}
-    for continent, coordinates in continent_boundaries.items():
-        city_list = []
-        for _ in range(5):
-            x = random.randint(coordinates[0][0], coordinates[1][0])
-            y = random.randint(coordinates[0][1], coordinates[1][1])
-            city_list.append(City(x, y))
-        cities[continent] = city_list
+def generate_cities(continent):
+    cities = []
+    bounds = continent_boundaries[continent]
+    
+    for _ in range(5):
+        x = random.randint(bounds[0][0], bounds[1][0])
+        y = random.randint(bounds[0][1], bounds[1][1])
+        cities.append(City(x, y))
+    
     return cities
 
 def draw_end_game_screen(screen, font, background, game_state):
@@ -194,6 +194,12 @@ def ai_turn(game_state):
         y = random.randint(ai_continent_coords[0][1], ai_continent_coords[1][1])
         game_state['ai_air_defense'] = AirDefense(x, y)
 
+    # Move AI battleships
+    for battleship in game_state['ai_battleships']:
+        dx = random.randint(-1, 1)
+        dy = random.randint(-1, 1)
+        battleship.move(dx, dy)
+
 def check_game_over(game_state):
     player_cities = game_state['cities'][game_state['selected_country']]
     ai_cities = game_state['cities'][game_state['ai_country']]
@@ -227,3 +233,38 @@ def handle_missile_collisions(game_state):
                 if other_missile in game_state['missiles']:
                     game_state['missiles'].remove(other_missile)
                 break
+
+def handle_battleship_placement(game_state, x, y):
+    if len(game_state['player_battleships']) < 3:  # Limit to 3 battleships
+        game_state['player_battleships'].append(Battleship(x, y, True))
+        return True
+    return False
+
+def handle_battleship_combat(game_state):
+    for player_ship in game_state['player_battleships']:
+        for ai_ship in game_state['ai_battleships']:
+            distance = ((player_ship.x - ai_ship.x)**2 + (player_ship.y - ai_ship.y)**2)**0.5
+            if distance < 100:  # Combat range
+                if player_ship.can_shoot():
+                    game_state['bullets'].append(Bullet(player_ship.x, player_ship.y, ai_ship.x, ai_ship.y, True))
+                    player_ship.shoot()
+                if ai_ship.can_shoot():
+                    game_state['bullets'].append(Bullet(ai_ship.x, ai_ship.y, player_ship.x, player_ship.y, False))
+                    ai_ship.shoot()
+
+    # Update bullets and check for hits
+    for bullet in game_state['bullets'][:]:
+        bullet.update()
+        for ship in game_state['player_battleships'] + game_state['ai_battleships']:
+            if bullet.check_collision(ship):
+                if ship.take_damage(0.5):
+                    if ship in game_state['player_battleships']:
+                        game_state['player_battleships'].remove(ship)
+                    else:
+                        game_state['ai_battleships'].remove(ship)
+                game_state['bullets'].remove(bullet)
+                break
+        if bullet not in game_state['bullets']:
+            continue
+        if bullet.is_out_of_bounds():
+            game_state['bullets'].remove(bullet)

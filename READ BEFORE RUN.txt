@@ -37,6 +37,7 @@ KNOWN BUGS/GLITCHES
 ===================
 1. Cities not being directly in the country you have chosen
 2. "Game Volume" label isnt in line with the screen boundary. - working on it
+3. Battleships movement not correct and battlehship bullets not displaying
 
 *UPDATES*
 
@@ -46,3 +47,4 @@ Version 3.1: Updated the selection box sizes and spacing
 Version 3.2: Added username function to the game
 Version 3.3: Added explosion blast circle and sound effect. Fixed AI firing apon themselves! Air defence CAN BE SHOT DOWN IN 2 HITS if a missile passes through the center of it. The air defence will regen and you will be able to place down another.
 Version 3.4: Updated intro screen. Changed the loudness of the explosion sound. Air Defence now shows the missile its targeting and it will get depleated after 2 hits on a missile. Will still regen after getting depleated.
+Version 3.5: Added battleships to the game, each player has 3 battleships to use with a health bar above them.

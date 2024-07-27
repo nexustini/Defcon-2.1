@@ -1,6 +1,7 @@
 import pygame
 import random
-from entities import City, Missile, AirDefense
+from constants import WIDTH, HEIGHT
+from entities import City, Missile, AirDefense, Battleship, Bullet
 import game_logic
 import time
 
@@ -11,7 +12,6 @@ pygame.init()
 pygame.mixer.init()
 
 # Constants
-WIDTH, HEIGHT = 1280, 720
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
@@ -97,8 +97,12 @@ game_state = {
     'player_air_defense': None,
     'ai_air_defense': None,
     'explosion_effects': {},
-    'sfx_volume': 0.5  # Add this line
+    'sfx_volume': 0.5,
+    'player_battleships': [],
+    'ai_battleships': [],
+    'bullets': []
 }
+
 # Font for UI
 font = pygame.font.SysFont(None, 36)
 title_font = pygame.font.SysFont(None, 100)
@@ -160,44 +164,89 @@ def draw_ui(game_state):
     text_rect = air_defense_text.get_rect(center=air_defense_button.center)
     screen.blit(air_defense_text, text_rect)
 
+    # Draw battleship placement button
+    battleship_button = pygame.Rect(WIDTH - 200, HEIGHT - 200, 190, 40)
+    pygame.draw.rect(screen, BUTTON_COLOR, battleship_button)
+    battleship_text = small_font.render("Place Battleship", True, BUTTON_TEXT_COLOR)
+    text_rect = battleship_text.get_rect(center=battleship_button.center)
+    screen.blit(battleship_text, text_rect)
+
     if game_state['health_display']:
         screen.blit(game_state['health_display'], game_state['health_display'].get_rect(center=(WIDTH//2, HEIGHT - 60)))
-def place_air_defense(game_state, x, y, is_player=True):
-    if is_player and game_state['player_air_defense'] is None:
-        game_state['player_air_defense'] = AirDefense(x, y)
-    elif not is_player and game_state['ai_air_defense'] is None:
-        game_state['ai_air_defense'] = AirDefense(x, y)
 
-def point_in_polygon(x, y, polygon):
-    n = len(polygon)
-    inside = False
-    p1x, p1y = polygon[0]
-    for i in range(n + 1):
-        p2x, p2y = polygon[i % n]
-        if y > min(p1y, p2y):
-            if y <= max(p1y, p2y):
-                if x <= max(p1x, p2x):
-                    if p1y != p2y:
-                        xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
-                    if p1x == p2x or x <= xinters:
-                        inside = not inside
-        p1x, p1y = p2x, p2y
-    return inside
+def is_player_missile(game_state, missile):
+    return any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
+               for city in game_state['cities'][game_state['selected_country']])
 
-def generate_cities(continent, num_cities=5):
-    cities = []
-    bounds = game_state['continent_boundaries'][continent]
+def is_ai_missile(game_state, missile):
+    return any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
+               for city in game_state['cities'][game_state['ai_country']])
+
+def handle_air_defense(air_defense, missile):
+    air_defense.update()
+    if air_defense.can_shoot() and air_defense.in_range(missile):
+        air_defense.target_missile(missile)  # Set the current target
+        if random.random() < 0.7:  # 70% chance to shoot down
+            air_defense.shoot()
+            if is_player_missile(game_state, missile):
+                # AI air defense takes damage from player missiles
+                if air_defense.take_damage():
+                    # AI air defense is destroyed
+                    game_state['ai_air_defense'] = None
+                    return True
+            else:
+                # Player air defense takes damage from AI missiles
+                if air_defense.take_damage(is_icbm=missile.is_icbm):
+                    # Player air defense is destroyed
+                    game_state['player_air_defense'] = None
+                    return True
+            return True
+    else:
+        air_defense.target = None  # Clear the target if not in range or can't shoot
+    return False
+
+def handle_missile_hit(game_state, missile):
+    global sfx_volume
+    is_player_missile = any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
+                            for city in game_state['cities'][game_state['selected_country']])
     
-    for _ in range(num_cities):
-        x = random.randint(bounds[0][0], bounds[1][0])
-        y = random.randint(bounds[0][1], bounds[1][1])
-        cities.append(City(x, y))
+    if is_player_missile:
+        game_state['player_score'] += 1
+    else:
+        game_state['ai_score'] += 1
     
-    return cities
+    game_state['score'] += 1
+    
+    for continent, city_list in game_state['cities'].items():
+        for city in city_list[:]:  # Create a copy of the list to iterate over
+            if (city.x, city.y) == missile.target_pos:
+                if city.hit(missile.is_icbm):
+                    city_list.remove(city)
+                    # Create the explosion effect
+                    game_state['explosion_effects'][(city.x, city.y)] = {
+                        'radius': 0,
+                        'max_radius': 50,
+                        'fade_rate': 2,
+                        'creation_time': pygame.time.get_ticks()
+                    }
+                    
+                    # Play the explosion sound
+                    if explosion_sound:
+                        explosion_sound.set_volume(sfx_volume)
+                        explosion_sound.play()
+                        
+                game_logic.check_game_over(game_state)
+                if game_state['game_over']:
+                    game_state['total_time'] = int(time.time() - game_state['start_time'])
+                break
+    
+    game_state['missiles'].remove(missile)  # Remove the missile after it has hit
 
 def game_loop():
     global volume
     placing_air_defense = False
+    placing_battleship = False
+    selected_battleship = None
     running = True
     while running:
         for event in pygame.event.get():
@@ -209,17 +258,23 @@ def game_loop():
                     return True  # Restart the game
             elif game_state['user_turn'] and event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
-                air_defense_button = pygame.Rect(WIDTH - 200, HEIGHT - 120, 190, 50)
+                air_defense_button = pygame.Rect(WIDTH - 200, HEIGHT - 140, 190, 40)
+                battleship_button = pygame.Rect(WIDTH - 200, HEIGHT - 200, 190, 40)
                 
                 if air_defense_button.collidepoint(x, y):
                     placing_air_defense = True
+                elif battleship_button.collidepoint(x, y):
+                    placing_battleship = True
                 elif placing_air_defense:
-                    place_air_defense(game_state, x, y, is_player=True)
+                    game_state['player_air_defense'] = AirDefense(x, y)
                     placing_air_defense = False
+                elif placing_battleship:
+                    if game_logic.handle_battleship_placement(game_state, x, y):
+                        placing_battleship = False
                 elif slider_rect.collidepoint(x, y):
                     volume = (x - slider_rect.x) / slider_rect.width
                     pygame.mixer.music.set_volume(volume)
-                elif WIDTH - 200 <= x <= WIDTH - 10 and HEIGHT - 60 <= y <= HEIGHT - 10:
+                elif WIDTH - 200 <= x <= WIDTH - 10 and HEIGHT - 80 <= y <= HEIGHT - 40:
                     game_state['selected_missile_type'] = "icbm" if game_state['selected_missile_type'] == "regular" else "regular"
                 elif game_state['selected_city'] is None:
                     if game_logic.handle_city_selection(game_state):
@@ -235,14 +290,34 @@ def game_loop():
                         game_state['selected_city'] = None
                         game_state['target_city'] = None
                         game_state['user_turn'] = False
+                else:
+                    # Check if a battleship was clicked
+                    for battleship in game_state['player_battleships']:
+                        if abs(battleship.x - x) < 10 and abs(battleship.y - y) < 5:
+                            selected_battleship = battleship
+                            break
+
+            elif event.type == pygame.KEYDOWN and selected_battleship:
+                if event.key == pygame.K_LEFT:
+                    selected_battleship.move(-1, 0)
+                elif event.key == pygame.K_RIGHT:
+                    selected_battleship.move(1, 0)
+                elif event.key == pygame.K_UP:
+                    selected_battleship.move(0, -1)
+                elif event.key == pygame.K_DOWN:
+                    selected_battleship.move(0, 1)
+
+            elif event.type == pygame.KEYUP:
+                if event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
+                    selected_battleship = None
 
         if not game_state['user_turn'] and not game_state['game_over']:
             game_logic.ai_turn(game_state)
             game_state['user_turn'] = True
 
-        for missile in game_state['missiles'][:]:  # Create a copy of the list to iterate over
+        # Update missiles
+        for missile in game_state['missiles'][:]:
             if missile.update():
-                # Missile has reached its target
                 handle_missile_hit(game_state, missile)
             else:
                 # Check for air defense interception
@@ -260,20 +335,30 @@ def game_loop():
                             game_state['ai_air_defense'].target = None  # Clear target after successful interception
                         continue
 
+        # Update bullets
+        for bullet in game_state['bullets'][:]:
+            bullet.update()
+            if bullet.is_out_of_bounds():
+                game_state['bullets'].remove(bullet)
+
         game_logic.handle_missile_collisions(game_state)
+        game_logic.handle_battleship_combat(game_state)
 
         screen.blit(background, (0, 0))
         if game_state['game_over']:
             game_logic.draw_end_game_screen(screen, font, background, game_state)
         else:
+            # Draw cities
             for continent, city_list in game_state['cities'].items():
                 for city in city_list:
                     color = GREEN if continent == game_state['selected_country'] else RED
                     pygame.draw.circle(screen, color, (city.x, city.y), 4)
+            
+            # Draw missiles
             for missile in game_state['missiles']:
                 missile.draw(screen)
             
-            # Draw player air defense
+            # Draw air defenses
             if game_state['player_air_defense']:
                 ad = game_state['player_air_defense']
                 pygame.draw.circle(screen, BLUE, (ad.x, ad.y), 6)
@@ -281,13 +366,22 @@ def game_loop():
                 if ad.target:
                     pygame.draw.line(screen, BLUE, (ad.x, ad.y), ad.target.position, 2)
             
-            # Draw AI air defense
             if game_state['ai_air_defense']:
                 ad = game_state['ai_air_defense']
                 pygame.draw.circle(screen, ORANGE, (ad.x, ad.y), 6)
                 pygame.draw.circle(screen, ORANGE, (ad.x, ad.y), ad.range, 1)
                 if ad.target:
                     pygame.draw.line(screen, ORANGE, (ad.x, ad.y), ad.target.position, 2)
+
+            # Draw battleships
+            for battleship in game_state['player_battleships']:
+                battleship.draw(screen)
+            for battleship in game_state['ai_battleships']:
+                battleship.draw(screen)
+
+            # Draw bullets
+            for bullet in game_state['bullets']:
+                bullet.draw(screen)
 
             # Draw and update the explosion effects
             for position, effect in list(game_state['explosion_effects'].items()):
@@ -319,7 +413,6 @@ def game_loop():
         pygame.display.flip()
         clock.tick(FPS)
     return False  # Exit the game
-
 def show_intro():
     title_text = title_font.render("DEFCON 2.1", True, RED)
     title_rect = title_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 30))  # Moved up slightly
@@ -380,9 +473,16 @@ def main():
         
         # Generate 5 cities for the player and AI in their respective continents
         game_state['cities'] = {
-            game_state['selected_country']: generate_cities(game_state['selected_country']),
-            game_state['ai_country']: generate_cities(game_state['ai_country'])
+            game_state['selected_country']: game_logic.generate_cities(game_state['selected_country']),
+            game_state['ai_country']: game_logic.generate_cities(game_state['ai_country'])
         }
+        
+        # Generate AI battleships
+        ai_continent_coords = game_state['continent_boundaries'][game_state['ai_country']]
+        for _ in range(3):
+            x = random.randint(ai_continent_coords[0][0], ai_continent_coords[1][0])
+            y = random.randint(ai_continent_coords[0][1], ai_continent_coords[1][1])
+            game_state['ai_battleships'].append(Battleship(x, y, False))
         
         game_state['start_time'] = time.time()
         
@@ -411,78 +511,13 @@ def main():
             'total_time': 0,
             'player_air_defense': None,
             'ai_air_defense': None,
-            'explosion_effects': {}  # Reset the explosion effects
+            'explosion_effects': {},
+            'player_battleships': [],
+            'ai_battleships': [],
+            'bullets': []
         })
 
     pygame.quit()
-
-def is_player_missile(game_state, missile):
-    return any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
-               for city in game_state['cities'][game_state['selected_country']])
-
-def is_ai_missile(game_state, missile):
-    return any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
-               for city in game_state['cities'][game_state['ai_country']])
-
-def handle_air_defense(air_defense, missile):
-    air_defense.update()
-    if air_defense.can_shoot() and air_defense.in_range(missile):
-        air_defense.target_missile(missile)  # Set the current target
-        if random.random() < 0.7:  # 70% chance to shoot down
-            air_defense.shoot()
-            if is_player_missile(game_state, missile):
-                # AI air defense takes damage from player missiles
-                if air_defense.take_damage():
-                    # AI air defense is destroyed
-                    game_state['ai_air_defense'] = None
-                    return True
-            else:
-                # Player air defense takes damage from AI missiles
-                if air_defense.take_damage(is_icbm=missile.is_icbm):
-                    # Player air defense is destroyed
-                    game_state['player_air_defense'] = None
-                    return True
-            return True
-    else:
-        air_defense.target = None  # Clear the target if not in range or can't shoot
-    return False
-
-def handle_missile_hit(game_state, missile):
-    global sfx_volume
-    is_player_missile = any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
-                            for city in game_state['cities'][game_state['selected_country']])
-    
-    if is_player_missile:
-        game_state['player_score'] += 1
-    else:
-        game_state['ai_score'] += 1
-    
-    game_state['score'] += 1
-    
-    for continent, city_list in game_state['cities'].items():
-        for city in city_list[:]:  # Create a copy of the list to iterate over
-            if (city.x, city.y) == missile.target_pos:
-                if city.hit(missile.is_icbm):
-                    city_list.remove(city)
-                    # Create the explosion effect
-                    game_state['explosion_effects'][(city.x, city.y)] = {
-                        'radius': 0,
-                        'max_radius': 50,
-                        'fade_rate': 2,
-                        'creation_time': pygame.time.get_ticks()
-                    }
-                    
-                    # Play the explosion sound
-                    if explosion_sound:
-                        explosion_sound.set_volume(0.2)# Sets explosion sound to 40%
-                        explosion_sound.play()
-                        
-                game_logic.check_game_over(game_state)
-                if game_state['game_over']:
-                    game_state['total_time'] = int(time.time() - game_state['start_time'])
-                break
-    
-    game_state['missiles'].remove(missile)  # Remove the missile after it has hit
 
 if __name__ == "__main__":
     main()
