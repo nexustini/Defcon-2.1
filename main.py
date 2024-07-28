@@ -110,23 +110,31 @@ small_font = pygame.font.SysFont(None, 24)  # New smaller font for the air defen
 
 def draw_ui(game_state):
     global volume
+    
+    # Draw score
     score_text = font.render(f"Score: {game_state['score']}", True, WHITE)
     screen.blit(score_text, (10, 10))
+    
+    # Draw country information
     if game_state['selected_country']:
         country_text = font.render(f"Your Continent: {game_state['selected_country']}", True, WHITE)
         screen.blit(country_text, (10, 50))
     if game_state['ai_country']:
         ai_text = font.render(f"AI Continent: {game_state['ai_country']}", True, WHITE)
         screen.blit(ai_text, (10, 90))
+    
+    # Draw selected city information
     if game_state['selected_city']:
         city_text = font.render(f"Selected City: ({game_state['selected_city'].x}, {game_state['selected_city'].y})", True, WHITE)
         screen.blit(city_text, (10, 130))
         icbm_text = font.render(f"ICBMs: {game_state['selected_city'].icbm_count}", True, WHITE)
         screen.blit(icbm_text, (10, 170))
+    
+    # Draw target city information
     if game_state['target_city']:
         target_text = font.render(f"Target City: ({game_state['target_city'].x}, {game_state['target_city'].y})", True, WHITE)
         screen.blit(target_text, (10, 210))
-        
+    
     # Draw missile selection box
     missile_button = pygame.Rect(WIDTH - 200, HEIGHT - 80, 190, 40)
     pygame.draw.rect(screen, BUTTON_COLOR, missile_button)
@@ -153,26 +161,48 @@ def draw_ui(game_state):
     screen.blit(player_score_text, (10, HEIGHT - 80))
     screen.blit(ai_score_text, (10, HEIGHT - 40))
 
-    # Draw air defense count
-    air_defense_text = font.render(f"Air Defense: {'Available' if game_state['player_air_defense'] is None else 'Placed'}", True, WHITE)
+    # Draw air defense status
+    air_defense_text = font.render(f"Air Defense: {'Placed' if game_state['player_air_defense'] else 'Available'}", True, WHITE)
     screen.blit(air_defense_text, (10, HEIGHT - 120))
 
     # Draw air defense placement button
     air_defense_button = pygame.Rect(WIDTH - 200, HEIGHT - 140, 190, 40)
-    pygame.draw.rect(screen, BUTTON_COLOR, air_defense_button)
+    button_color = BUTTON_COLOR if game_state['player_air_defense'] is None else (100, 100, 100)  # Dim the button if air defense is placed
+    pygame.draw.rect(screen, button_color, air_defense_button)
     air_defense_text = small_font.render("Place Air Defense", True, BUTTON_TEXT_COLOR)
     text_rect = air_defense_text.get_rect(center=air_defense_button.center)
     screen.blit(air_defense_text, text_rect)
 
-    # Draw battleship placement button
+    # Draw battleship count and placement button
+    battleship_count_text = font.render(f"Battleships: {len(game_state['player_battleships'])}/3", True, WHITE)
+    screen.blit(battleship_count_text, (10, HEIGHT - 160))
+
     battleship_button = pygame.Rect(WIDTH - 200, HEIGHT - 200, 190, 40)
-    pygame.draw.rect(screen, BUTTON_COLOR, battleship_button)
+    button_color = BUTTON_COLOR if len(game_state['player_battleships']) < 3 else (100, 100, 100)  # Dim the button if max battleships are placed
+    pygame.draw.rect(screen, button_color, battleship_button)
     battleship_text = small_font.render("Place Battleship", True, BUTTON_TEXT_COLOR)
     text_rect = battleship_text.get_rect(center=battleship_button.center)
     screen.blit(battleship_text, text_rect)
 
+    # Draw turn indicator
+    turn_text = font.render("Your Turn" if game_state['user_turn'] else "AI Turn", True, GREEN if game_state['user_turn'] else RED)
+    screen.blit(turn_text, (WIDTH // 2 - turn_text.get_width() // 2, HEIGHT - 40))
+
+    # Draw health display (for temporary messages)
     if game_state['health_display']:
         screen.blit(game_state['health_display'], game_state['health_display'].get_rect(center=(WIDTH//2, HEIGHT - 60)))
+
+    # Draw selected battleship indicator
+    if game_state.get('selected_battleship'):
+        selected_text = font.render("Selected Battleship", True, YELLOW)
+        screen.blit(selected_text, (WIDTH - 220, HEIGHT - 240))
+
+    # Draw remaining cities count
+    player_cities = len(game_state['cities'][game_state['selected_country']])
+    ai_cities = len(game_state['cities'][game_state['ai_country']])
+    cities_text = font.render(f"Your Cities: {player_cities} | AI Cities: {ai_cities}", True, WHITE)
+    screen.blit(cities_text, (WIDTH // 2 - cities_text.get_width() // 2, 50))
+    
 
 def is_player_missile(game_state, missile):
     return any(city.x == missile.start_pos[0] and city.y == missile.start_pos[1] 
@@ -262,9 +292,19 @@ def game_loop():
                 battleship_button = pygame.Rect(WIDTH - 200, HEIGHT - 200, 190, 40)
                 
                 if air_defense_button.collidepoint(x, y):
-                    placing_air_defense = True
+                    if game_state['player_air_defense'] is None:
+                        placing_air_defense = True
+                    else:
+                        # Display a message that air defense is already placed
+                        game_state['health_display'] = font.render("Air Defense already placed!", True, RED)
+                        game_state['health_display_time'] = pygame.time.get_ticks()
                 elif battleship_button.collidepoint(x, y):
-                    placing_battleship = True
+                    if len(game_state['player_battleships']) < 3:
+                        placing_battleship = True
+                    else:
+                        # Display a message that maximum battleships are placed
+                        game_state['health_display'] = font.render("Maximum battleships reached!", True, RED)
+                        game_state['health_display_time'] = pygame.time.get_ticks()
                 elif placing_air_defense:
                     game_state['player_air_defense'] = AirDefense(x, y)
                     placing_air_defense = False
@@ -413,6 +453,8 @@ def game_loop():
         pygame.display.flip()
         clock.tick(FPS)
     return False  # Exit the game
+
+
 def show_intro():
     title_text = title_font.render("DEFCON 2.1", True, RED)
     title_rect = title_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 30))  # Moved up slightly
